@@ -65,6 +65,7 @@ pipeline {
                         docker stop zap || true
                         docker rm zap || true
                         docker stop juice-shop || true
+                        cp -r ${WORKSPACE}/results /home/adsec/wyniki || true
                     '''
                     // archiwizacja
                     archiveArtifacts artifacts: 'results/**/*', fingerprint: true, allowEmptyArchive: true
