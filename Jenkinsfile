@@ -9,41 +9,33 @@ pipeline {
                 script {
                     cleanWs()
                     git credentialsId: 'github-pat', url: 'https://github.com/adakoval/abcd-student', branch: 'main'
-                    sh 'mkdir results'
-                    sh "trufflehog git file://. --json --only-verified > results/trufflehog-output.json"
                 }
             }
-                post{
-                    always{
-                        archiveArtifacts artifacts: 'results/trufflehog-output.json', fingerprint: true, allowEmptyArchive: true
-                    }
-                }
         }
-        stage('Semgrep') {
+        stage('Prepare test environment') {
             steps {
-                script {
-                    sh 'semgrep scan --config=auto --output=results/semgrep.json --json'
-                }
-            }
-                post{
-                    always{
-                        archiveArtifacts artifacts: 'results/semgrep.json', fingerprint: true, allowEmptyArchive: true
-                    }
-                }
-        }
-        
-        stage("[omv] SKAN"){
-            steps{
-                sh 'mkdir results || true'
-                sh 'osv-scanner scan --lockfile package-lock.json --format json --output results/sca-osv-scanner.json || true'
-            }
-            post{
-                always{
-                    archiveArtifacts artifacts: 'results/**/*', fingerprint: true, allowEmptyArchive: true
-                }
+                sh 'mkdir reports'
+                sh 'chmod 777 reports'
+                sh '''
+                    if [ $(docker ps -q -f name=juice-shop) ]; then
+                        echo "Stopping existing juice-shop container"
+                        docker stop juice-shop || true
+                    fi
+                    '''
+                sh '''
+                    if [ $(docker ps -a -q -f name=zap) ]; then
+                        echo "Stopping and removing existing zap container"
+                        docker stop zap || true
+                        docker rm zap || true
+                    fi
+                    '''
             }
         }
-        
+        stage('[OSV] Scan package-lock.json file') {
+            steps {
+                sh 'osv-scanner --format json --output reports/osv_json_report.json --lockfile package-lock.json || true'
+            }
+        }
         stage('[ZAP] Baseline passive-scan') {
             steps {
                 sh 'mkdir -p results/'
@@ -56,26 +48,31 @@ pipeline {
                 sh '''
                     docker run --name zap \
                         --add-host=host.docker.internal:host-gateway \
-                        -v /home/kali/abcd-student/.zap:/zap/wrk/:rw \
-                        -t ghcr.io/zaproxy/zaproxy:stable bash -c "\
-                        zap.sh -cmd -addonupdate;\
-                        zap.sh -cmd -addoninstall communityScripts\
-                        -addoninstall pscanrulesAlpha\
-                        -addoninstall pscanrulesBeta\
-                        -autorun /zap/wrk/passive_scan.yaml" \
+                        -v /home/adsec/abcd-student/.zap:/zap/wrk/:rw \
+                        -t ghcr.io/zaproxy/zaproxy:stable bash -c \
+                        "zap.sh -cmd -addonupdate; zap.sh -cmd -addoninstall communityScripts -addoninstall pscanrulesAlpha -addoninstall pscanrulesBeta -autorun /zap/wrk/.zap/passive.yaml" \
                         || true
-                '''   
+                '''
             }
-            post {
-                always {
-                    sh '''
-                        docker cp zap:/zap/wrk/reports/zap_html_report.html ${WORKSPACE}/results/zap_html_report.html || true
-                        docker cp zap:/zap/wrk/reports/zap_xml_report.xml ${WORKSPACE}/results/zap_xml_report.xml || true
-                        docker stop zap juice-shop 
-                        docker rm zap 
+        }
+        stage('[TH] Trufflehog Scan') {
+            steps {
+                sh 'trufflehog git file://$PWD --branch main --json > reports/trufflehog_json_report.json'
+            }
+        }
+        stage('[SEM] Semgrep Scan') {
+            steps {
+                sh 'semgrep scan --config auto --json-output=reports/semgrep_json_report.json'
+            }
+        }
+    }
+    post {
+        always {
+            sh '''
+                        docker stop zap juice-shop
+                        docker rm zap
                     '''
-                }
-            }
+            archiveArtifacts artifacts: 'reports/**/*.*', fingerprint: true
         }
     }
 }
