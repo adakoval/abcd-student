@@ -12,42 +12,36 @@ pipeline {
                 }
             }
         }
-        stage('Prepare test environment') {
+        stage('[Preparation]') {
             steps {
-                sh 'mkdir reports'
-                sh 'chmod 777 reports'
                 sh '''
-                    if [ $(docker ps -q -f name=juice-shop) ]; then
-                        echo "Stopping existing juice-shop container"
-                        docker stop juice-shop || true
-                    fi
-                    '''
-                sh '''
-                    if [ $(docker ps -a -q -f name=zap) ]; then
-                        echo "Stopping and removing existing zap container"
-                        docker stop zap || true
-                        docker rm zap || true
-                    fi
-                    '''
+                    mkdir -p results
+                    chmod -R 777 results
+                '''
             }
         }
-        
-        stage('Scan package-lock.json file') {
+        stage('[OSV-Scanner] Package-lock.json scan') {
             steps {
-                sh 'osv-scanner --format json --output reports/osv_json_report.json --lockfile package-lock.json || true'
+                script{
+                    sh 'osv-scanner --lockfile package-lock.json --format json --output=${WORKSPACE}/results/osv-report.json || true'
+                }
             }
         }
-        stage('Trufflehog Scan') {
+        stage('[TruffleHog] Scan') {
             steps {
-                sh 'trufflehog git file://$PWD --branch main --json > reports/trufflehog_json_report.json'
+                script{
+                    sh 'trufflehog git file://. --branch main --json > ${WORKSPACE}/results/trufflehog-report.json || true'
+                }
             }
         }
-        stage('Semgrep Scan') {
+        stage('[Semgrep] Scan') {
             steps {
-                sh 'semgrep scan --config auto --json-output=reports/semgrep_json_report.json'
+                script{
+                    sh 'semgrep scan --config auto --json-output=${WORKSPACE}/results/semgrep-report.json || true'
+                }
             }
         }
-        stage('ZAP Scan') {
+        stage('[ZAP] Scan') {
             steps {
                 sh '''
                     docker run --name juice-shop -d --rm \
@@ -60,7 +54,7 @@ pipeline {
                     docker rm -f zap || true
                     docker run --name zap \
                         --add-host=host.docker.internal:host-gateway \
-                        -v /home/kali/abcd-student/.zap:/zap/wrk/:rw \
+                        -v /home/adsec/abcd-student/.zap:/zap/wrk/:rw \
                         -t ghcr.io/zaproxy/zaproxy:stable bash -c \
                         "ls -l /zap/wrk/ && zap.sh -cmd -addonupdate; zap.sh -cmd -addoninstall communityScripts -addoninstall pscanrulesAlpha -addoninstall pscanrulesBeta -autorun /zap/wrk/passive.yaml" \
                         || true
@@ -71,13 +65,16 @@ pipeline {
                 '''
                 }
             }
-    post {
-        always {
-            sh '''
-                        docker stop zap juice-shop
-                        docker rm zap
-                    '''
-            archiveArtifacts artifacts: 'reports/**/*.*', fingerprint: true
+            post {
+                always {
+                    sh '''
+                    docker stop zap || true
+                    docker rm zap || true
+                    docker stop juice-shop || true
+                '''
+                archiveArtifacts artifacts: 'results/**/*', fingerprint: true, allowEmptyArchive: true
+                }
+            }
         }
     }
 }
