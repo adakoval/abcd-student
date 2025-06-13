@@ -10,15 +10,10 @@ pipeline {
                     cleanWs()
                     git credentialsId: 'github-pat', url: 'https://github.com/adakoval/abcd-student', branch: 'main'
                     sh 'mkdir results'
-                    sh "trufflehog git file://. --json --only-verified > results/trufflehog-output.json"
                 }
             }
-                post{
-                    always{
-                        archiveArtifacts artifacts: 'results/trufflehog-output.json', fingerprint: true, allowEmptyArchive: true
-                    }
-                }
-        }
+         }
+        
         stage('Semgrep') {
             steps {
                 script {
@@ -30,9 +25,24 @@ pipeline {
                         archiveArtifacts artifacts: 'results/semgrep.json', fingerprint: true, allowEmptyArchive: true
                     }
                 }
+            }
+        stage('Trufflehog') {
+            steps {
+                script {
+                    sh "trufflehog git file://. --json --only-verified > results/trufflehog-output.json"
+                }
+            }
+                post{
+                    always{
+                        archiveArtifacts artifacts: 'results/trufflehog-output.json', fingerprint: true, allowEmptyArchive: true
+                    }
+                }
         }
+
+
+
         
-        stage("[omv] SKAN"){
+        stage('OSV Scan'){
             steps{
                 sh 'mkdir results || true'
                 sh 'osv-scanner scan --lockfile package-lock.json --format json --output results/sca-osv-scanner.json || true'
@@ -44,7 +54,7 @@ pipeline {
             }
         }
         
-        stage('[ZAP] Baseline passive-scan') {
+        stage('ZAP Scan') {
             steps {
                 sh 'mkdir -p results/'
                 sh '''
@@ -55,10 +65,9 @@ pipeline {
                 '''
                 sh '''
                     docker run --name zap \
-                        --add-host=host.docker.internal:host-gateway \
-                        -v /home/adsec/abcd-student/.zap:/zap/wrk/:rw \
+                        --add-host=host.docker.internal:host-gateway -v /home/adsec/abcd-student/.zap:/zap/wrk/:rw \
                         -t ghcr.io/zaproxy/zaproxy:stable bash -c "\
-                        zap.sh -cmd -addonupdate;\
+                        zap.sh -cmd -addonupdate \
                         zap.sh -cmd -addoninstall communityScripts\
                         -addoninstall pscanrulesAlpha\
                         -addoninstall pscanrulesBeta\
