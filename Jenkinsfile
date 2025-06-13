@@ -9,7 +9,7 @@ pipeline {
                 script {
                     cleanWs()
                     git credentialsId: 'github-pat', url: 'https://github.com/adakoval/abcd-student', branch: 'main'
-                    sh 'mkdir results'
+                    sh 'mkdir home/adsec/results'
                 }
             }
         }
@@ -23,7 +23,7 @@ pipeline {
         stage('OSV-Scanner Package-lock.json scan') {
             steps {
                 script{
-                    sh 'osv-scanner --lockfile package-lock.json --format json --output=${WORKSPACE}/results/osv-report.json || true'
+                    sh 'osv-scanner --lockfile package-lock.json --format json --output=home/adsec/results/osv-report.json || true'
                 }
             }
         }
