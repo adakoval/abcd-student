@@ -47,28 +47,30 @@ pipeline {
                 sh 'semgrep scan --config auto --json-output=reports/semgrep_json_report.json'
             }
         }
-        stage('ZAP') {
+        stage('ZAP Scan') {
             steps {
-                sh 'mkdir -p results/'
                 sh '''
                     docker run --name juice-shop -d --rm \
                         -p 3000:3000 \
                         bkimminich/juice-shop
                     sleep 5
                 '''
+                timeout(time: 3, unit: 'MINUTES') {
                 sh '''
                     docker rm -f zap || true
                     docker run --name zap \
                         --add-host=host.docker.internal:host-gateway \
-                        -v /home/adsec/abcd-student/.zap:/zap/wrk/:rw \
+                        -v /home/kali/abcd-student/.zap:/zap/wrk/:rw \
                         -t ghcr.io/zaproxy/zaproxy:stable bash -c \
                         "ls -l /zap/wrk/ && zap.sh -cmd -addonupdate; zap.sh -cmd -addoninstall communityScripts -addoninstall pscanrulesAlpha -addoninstall pscanrulesBeta -autorun /zap/wrk/passive.yaml" \
                         || true
                 '''
+                sh '''
+                docker cp zap:/zap/wrk/reports/zap_html_report.html ${WORKSPACE}/results/zap_html_report.html
+                docker cp zap:/zap/wrk/reports/zap_xml_report.xml ${WORKSPACE}/results/zap_xml_report.xml
+                '''
+                }
             }
-        }
-
-    }
     post {
         always {
             sh '''
