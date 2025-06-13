@@ -14,6 +14,7 @@ pipeline {
             }
          }
         
+        
         stage('Semgrep') {
             steps {
                 script {
@@ -26,6 +27,7 @@ pipeline {
                     }
                 }
             }
+        
         stage('Trufflehog') {
             steps {
                 script {
@@ -44,8 +46,7 @@ pipeline {
         
         stage('OSV Scan'){
             steps{
-                sh 'mkdir results || true'
-                sh 'osv-scanner scan --lockfile package-lock.json --format json --output results/sca-osv-scanner.json || true'
+               sh 'osv-scanner scan --lockfile package-lock.json --format json --output results/sca-osv-scanner.json || true'
             }
             post{
                 always{
@@ -56,13 +57,8 @@ pipeline {
         
         stage('ZAP Scan') {
             steps {
-                sh 'mkdir -p results/'
-                sh '''
-                    docker run --name juice-shop -d --rm \
-                        -p 3000:3000 \
-                        bkimminich/juice-shop
-                    sleep 5
-                '''
+                sh docker run --name juice-shop -d --rm -p 3000:3000 bkimminich/juice-shop
+                    
                 sh '''
                     docker run --name zap \
                         --add-host=host.docker.internal:host-gateway -v /home/adsec/abcd-student/.zap:/zap/wrk/:rw \
